@@ -1,0 +1,84 @@
+export default {
+  async fetch(request) {
+    // Get the full URL including search params and hash
+    const url = new URL(request.url);
+    let fullPath = url.pathname + url.search + url.hash;
+    
+    // Remove any duplicate forward slashes
+    fullPath = fullPath.replace(/\/+/g, '/');
+    const targetURL = fullPath.slice(1); // Remove the leading slash
+    
+    // If no URL is provided, return an error
+    if (!targetURL) {
+      return new Response('Please provide a URL to proxy', {
+        status: 400,
+        headers: {
+          'content-type': 'text/plain',
+        },
+      });
+    }
+
+    try {
+      // Decode the URL and ensure it's properly formatted
+      const decodedURL = decodeURIComponent(targetURL);
+      
+      // Ensure the URL is properly formatted with a single protocol
+      const cleanURL = decodedURL.replace(/^(https?:\/\/)+(.*)/i, '$1$2');
+      
+      // Copy original request headers
+      const headers = new Headers(request.headers);
+      
+      // Remove problematic headers
+      headers.delete('host');
+      headers.delete('origin');
+      headers.delete('referer');
+      
+      // Create the new request
+      const modifiedRequest = new Request(cleanURL, {
+        method: request.method,
+        headers: headers,
+        body: request.body,
+      });
+
+      // Fetch the target URL
+      const response = await fetch(modifiedRequest);
+      
+      // Create a new response with CORS headers
+      const modifiedResponse = new Response(response.body, response);
+      
+      // Add CORS headers
+      modifiedResponse.headers.set('Access-Control-Allow-Origin', '*');
+      modifiedResponse.headers.set('Access-Control-Allow-Methods', 'GET, HEAD, POST, PUT, DELETE, OPTIONS');
+      modifiedResponse.headers.set('Access-Control-Allow-Headers', '*');
+      modifiedResponse.headers.set('Access-Control-Max-Age', '86400');
+      
+      // Remove potentially problematic headers
+      modifiedResponse.headers.delete('x-content-type-options');
+      modifiedResponse.headers.delete('x-frame-options');
+      modifiedResponse.headers.delete('x-xss-protection');
+
+      // Handle OPTIONS request for CORS preflight
+      if (request.method === 'OPTIONS') {
+        return new Response(null, {
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, HEAD, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': '*',
+            'Access-Control-Max-Age': '86400',
+          },
+        });
+      }
+
+      return modifiedResponse;
+    } catch (err) {
+      // Handle errors
+      return new Response(`Error proxying request: ${err.message}`, {
+        status: 500,
+        headers: {
+          'content-type': 'text/plain',
+          'Access-Control-Allow-Origin': '*',
+        },
+      });
+    }
+  },
+};
